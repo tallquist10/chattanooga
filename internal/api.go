@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 )
 
 type ChatServer interface {
+	RegisterUser(msg *User)
 	RegisterClient(msg *ClientMessage)
 	ReceiveMessage(msg *ChatRoomMessage)
 	BroadcastMessage(msg *Message, chatRoom *ChatRoom)
@@ -21,10 +23,12 @@ type ChatServerConfig struct {
 
 type WebSocketChatServer struct {
 	ChatServer
+	msgChan            chan *WebSocketMessage
 	closeChan          chan bool
 	createUserChan     chan *CreateUserRequest
 	registerClientChan chan *RegisterClientRequest
 	clientConnections  map[int64]*websocket.Conn
+	clientUsers        map[int64]*User
 	incomingChan       chan *ChatRoomMessage
 	broadcastChan      chan *BroadcastMessage
 	config             *ChatServerConfig
@@ -73,6 +77,8 @@ func (cs *WebSocketChatServer) Start() error {
 			clientId := clientCounter
 			clientCounter++
 			go cs.handleRegisterClient(msg, clientId)
+		case msg := <-cs.createUserChan:
+			cs.handleCreateUser(msg)
 		case _ = <-cs.closeChan:
 			return nil
 		default:
@@ -126,4 +132,49 @@ func (cs *WebSocketChatServer) handleRegisterClient(msg *RegisterClientRequest, 
 
 func (cs *WebSocketChatServer) CreateUser(msg *CreateUserRequest) {
 	cs.createUserChan <- msg
+}
+
+func (cs *WebSocketChatServer) handleCreateUser(msg *CreateUserRequest) {
+	select {
+	case user := <-msg.ResultChan:
+		cs.clientUsers[user] = msg.User
+	case _ = <-msg.ErrorChan:
+		fmt.Printf("Error creating user")
+	}
+}
+
+func (cs *WebSocketChatServer) HandleWebSocketMessage(msg *WebSocketMessage) error {
+	switch msg.Type {
+	case RegisterUser:
+		user, err := parseMessage[User](msg)
+		if err != nil {
+			fmt.Println("Error parsing user request")
+		}
+		resultChan := make(chan int64)
+		errorChan := make(chan error)
+		cs.CreateUser(&CreateUserRequest{
+			User:       user,
+			ResultChan: resultChan,
+			ErrorChan:  errorChan,
+		})
+		return nil
+	case ChatMessage:
+		chatMsg, err := parseMessage[ChatRoomMessage](msg)
+		if err != nil {
+			fmt.Println("Error parsing chat message")
+		}
+		cs.ReceiveMessage(chatMsg)
+		return nil
+	default:
+		return fmt.Errorf("Unrecognized websocket message type: %s", msg.Type)
+	}
+}
+
+func parseMessage[T any](msg *WebSocketMessage) (*T, error) {
+	var result *T
+	err := json.Unmarshal(msg.Payload, result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
