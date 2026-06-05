@@ -1,4 +1,4 @@
-package api
+package http
 
 import (
 	"database/sql"
@@ -6,13 +6,13 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/tallquist10/chat-server/shared/api"
-	"github.com/tallquist10/chat-server/shared/db"
+	"github.com/tallquist10/chat-server/api"
+	"github.com/tallquist10/chat-server/db"
 )
 
 type UsersApi struct {
 	dbConnection   *db.Queries
-	createUserChan chan *DBHandler[CreateUserRequest]
+	createUserChan chan *DBHandler[api.CreateUserRequest]
 	closeChan      chan bool
 }
 
@@ -41,7 +41,7 @@ func (u *UsersApi) Start() error {
 }
 
 func (u *UsersApi) CreateUser(c *gin.Context) {
-	req, err := api.FormatJsonInput[CreateUserRequest](c)
+	req, err := api.FormatJsonInput[api.CreateUserRequest](c)
 
 	if err != nil {
 		fmt.Println("Failed to decode CreateUserRequest", err.Error())
@@ -49,7 +49,7 @@ func (u *UsersApi) CreateUser(c *gin.Context) {
 		return
 	}
 
-	u.createUserChan <- &DBHandler[CreateUserRequest]{
+	u.createUserChan <- &DBHandler[api.CreateUserRequest]{
 		request: req,
 		context: c,
 	}
@@ -61,7 +61,7 @@ func (u *UsersApi) CreateUser(c *gin.Context) {
 		api.WriteResponse(c, http.StatusUnprocessableEntity, &err)
 	}
 }
-func (u *UsersApi) createUser(req *DBHandler[CreateUserRequest]) {
+func (u *UsersApi) createUser(req *DBHandler[api.CreateUserRequest]) {
 	user, err := u.dbConnection.CreateUser(
 		req.context,
 		db.CreateUserParams{

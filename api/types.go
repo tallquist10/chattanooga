@@ -19,6 +19,12 @@ type WebSocketMessage struct {
 	Payload json.RawMessage      `json:"payload"`
 }
 
+type CreateUserRequest struct {
+	User       *User
+	ResultChan chan int64
+	ErrorChan  chan error
+}
+
 type User struct {
 	Id          int64  `json:"id"`
 	Username    string `json:"username"`

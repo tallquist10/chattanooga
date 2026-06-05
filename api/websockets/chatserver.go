@@ -1,4 +1,4 @@
-package api
+package websockets
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/tallquist10/chat-server/shared/api"
+	"github.com/tallquist10/chat-server/api"
 )
 
 type ChatServer interface {
