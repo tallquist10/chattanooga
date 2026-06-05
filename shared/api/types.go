@@ -1,4 +1,4 @@
-package internal
+package api
 
 import (
 	"encoding/json"
@@ -49,6 +49,11 @@ type ChatRoomMessage struct {
 }
 
 type BroadcastMessage struct {
-	message  *Message
+	Message  *Message
 	ChatRoom *ChatRoom
+}
+
+type RegisterClientRequest struct {
+	Connection *websocket.Conn
+	UserIdChan chan int64
 }

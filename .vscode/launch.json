@@ -9,7 +9,24 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "cmd/server/main.go",
+            "program": "websockets/cmd/server/main.go",
+            "env": {
+                "PGHOST": "localhost",
+                "PGPASSWORD": "password",
+                "MIGRATIONS_FILE_PATH": "${workspaceFolder}/sql/migrations" //open just the chatserver project
+            }
+        },
+        {
+            "name": "UserService",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "http/cmd/server/main.go",
+            "env": {
+                "PGHOST": "localhost",
+                "PGPASSWORD": "password",
+                "MIGRATIONS_FILE_PATH": "${workspaceFolder}/sql/migrations" //open just the chatserver project
+            }
         },
         {
             "name": "Test ChatServer",
