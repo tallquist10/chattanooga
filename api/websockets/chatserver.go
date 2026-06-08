@@ -117,11 +117,6 @@ func (cs *WebSocketChatServer) HandleConnection(c *gin.Context) {
 
 		fmt.Printf("Received message: %s\n", p)
 
-		// // Echo the message back to the client
-		// if err := conn.WriteMessage(messageType, p); err != nil {
-		// 	log.Println("Error writing message:", err)
-		// 	break
-		// }
 		var msg api.WebSocketMessage
 		err = json.Unmarshal(p, &msg)
 		if err != nil {
@@ -141,14 +136,6 @@ func (cs *WebSocketChatServer) ReceiveMessage(c *gin.Context, msg *api.ChatRoomM
 }
 
 func (cs *WebSocketChatServer) handleReceiveMessage(req *api.DBHandler[api.ChatRoomMessage]) {
-	// outgoingMsg := &api.BroadcastMessage{
-	// 	Message: &api.Message{
-	// 		Sender: &api.User{
-	// 			Id: msg.UserId,
-	// 		},
-	// 		Content: string(msg.Content),
-	// 	},
-	// }
 
 	// persist the nessage to the messages table
 	dbMsg, err := cs.dbConnection.CreateMessage(req.Context, db.CreateMessageParams{
