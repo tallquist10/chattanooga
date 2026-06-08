@@ -1,12 +1,18 @@
 package websockets
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
+	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	ws "github.com/gorilla/websocket"
 	"github.com/tallquist10/chat-server/api"
+	"github.com/tallquist10/chat-server/db"
 )
 
 type ChatServer interface {
@@ -24,25 +30,34 @@ type ChatServerConfig struct {
 
 type WebSocketChatServer struct {
 	ChatServer
+	upgrader           *ws.Upgrader
 	msgChan            chan *api.WebSocketMessage
 	closeChan          chan bool
 	registerClientChan chan *api.RegisterClientRequest
-	clientConnections  map[int64]*websocket.Conn
+	clientConnections  map[int64]*ws.Conn
 	clientUsers        map[int64]*api.User
-	incomingChan       chan *api.ChatRoomMessage
+	incomingChan       chan *api.DBHandler[api.ChatRoomMessage]
 	broadcastChan      chan *api.BroadcastMessage
+	dbConnection       *db.Queries
 	config             *ChatServerConfig
 }
 
 func NewChatServer(
 	config *ChatServerConfig,
+	conn *sql.DB,
 ) *WebSocketChatServer {
 	return &WebSocketChatServer{
 		registerClientChan: make(chan *api.RegisterClientRequest, config.BufferSize),
-		clientConnections:  make(map[int64]*websocket.Conn),
-		incomingChan:       make(chan *api.ChatRoomMessage, config.BufferSize),
+		clientConnections:  make(map[int64]*ws.Conn),
+		incomingChan:       make(chan *api.DBHandler[api.ChatRoomMessage], config.BufferSize),
 		broadcastChan:      make(chan *api.BroadcastMessage, config.BufferSize),
 		closeChan:          make(chan bool),
+		dbConnection:       db.New(conn),
+		upgrader: &ws.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				return true
+			},
+		},
 	}
 }
 
@@ -72,19 +87,93 @@ func (cs *WebSocketChatServer) Start() error {
 	}
 }
 
-func (cs *WebSocketChatServer) ReceiveMessage(msg *api.ChatRoomMessage) {
-	cs.incomingChan <- msg
+func (cs *WebSocketChatServer) HandleConnection(c *gin.Context) {
+	conn, err := cs.upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Println("Failed to set websocket upgrade:", err)
+		return
+	}
+
+	clientIdChan := make(chan int64)
+	registerClientRequest := &api.RegisterClientRequest{
+		Connection: conn,
+		UserIdChan: clientIdChan,
+	}
+	cs.RegisterClient(registerClientRequest)
+	clientId := <-registerClientRequest.UserIdChan
+	fmt.Printf("Registered client %d\n", clientId)
+	conn.WriteMessage(ws.TextMessage, []byte(fmt.Sprintf("Your client id is %d. Please use this client id in all of your requests", clientId)))
+
+	// Ensure the connection is closed when the function returns
+	defer conn.Close()
+
+	// Read and write messages in a loop
+	for {
+		_, p, err := conn.ReadMessage()
+		if err != nil {
+			log.Println("Error reading message:", err)
+			break
+		}
+
+		fmt.Printf("Received message: %s\n", p)
+
+		// // Echo the message back to the client
+		// if err := conn.WriteMessage(messageType, p); err != nil {
+		// 	log.Println("Error writing message:", err)
+		// 	break
+		// }
+		var msg api.WebSocketMessage
+		err = json.Unmarshal(p, &msg)
+		if err != nil {
+			fmt.Printf("Failed to parse message: %e", err)
+		}
+
+		cs.HandleWebSocketMessage(c, &msg)
+	}
 }
 
-func (cs *WebSocketChatServer) handleReceiveMessage(msg *api.ChatRoomMessage) {
+func (cs *WebSocketChatServer) ReceiveMessage(c *gin.Context, msg *api.ChatRoomMessage) {
+
+	cs.incomingChan <- &api.DBHandler[api.ChatRoomMessage]{
+		Request: msg,
+		Context: c,
+	}
+}
+
+func (cs *WebSocketChatServer) handleReceiveMessage(req *api.DBHandler[api.ChatRoomMessage]) {
+	// outgoingMsg := &api.BroadcastMessage{
+	// 	Message: &api.Message{
+	// 		Sender: &api.User{
+	// 			Id: msg.UserId,
+	// 		},
+	// 		Content: string(msg.Content),
+	// 	},
+	// }
+
+	// persist the nessage to the messages table
+	dbMsg, err := cs.dbConnection.CreateMessage(req.Context, db.CreateMessageParams{
+		UserID:     req.Request.UserId,
+		ChatRoomID: req.Request.ChannelId,
+		Content:    req.Request.Content,
+	})
+
+	if err != nil {
+		fmt.Printf("Failed to persist chat message: %s", err.Error())
+		api.WriteResponse(req.Context, http.StatusInternalServerError, &err)
+	}
+
 	outgoingMsg := &api.BroadcastMessage{
 		Message: &api.Message{
+			Content: dbMsg.Content,
 			Sender: &api.User{
-				Id: msg.UserId,
+				Id: dbMsg.UserID,
 			},
-			Content: string(msg.Content),
+		},
+		ChatRoom: &api.ChatRoom{
+			Id: dbMsg.ChatRoomID,
 		},
 	}
+
 	cs.BroadcastMessage(outgoingMsg)
 }
 
@@ -115,14 +204,14 @@ func (cs *WebSocketChatServer) handleRegisterClient(msg *api.RegisterClientReque
 	close(msg.UserIdChan)
 }
 
-func (cs *WebSocketChatServer) HandleWebSocketMessage(msg *api.WebSocketMessage) error {
+func (cs *WebSocketChatServer) HandleWebSocketMessage(c *gin.Context, msg *api.WebSocketMessage) error {
 	switch msg.Type {
 	case api.ChatMessage:
 		chatMsg, err := parseMessage[api.ChatRoomMessage](msg)
 		if err != nil {
 			fmt.Println("Error parsing chat message")
 		}
-		cs.ReceiveMessage(chatMsg)
+		cs.ReceiveMessage(c, chatMsg)
 		return nil
 	default:
 		return fmt.Errorf("Unrecognized websocket message type: %s", msg.Type)

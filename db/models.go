@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-type ChatMessage struct {
+type ChatsChatMessage struct {
 	ID         int64
 	UserID     int64
 	ChatRoomID int64
@@ -19,7 +19,7 @@ type ChatMessage struct {
 	IsDeleted  sql.NullBool
 }
 
-type ChatRoom struct {
+type ChatsChatRoom struct {
 	ID          int64
 	Name        string
 	Description sql.NullString
@@ -27,7 +27,7 @@ type ChatRoom struct {
 	IsDeleted   sql.NullBool
 }
 
-type User struct {
+type ChatsUser struct {
 	ID          int64
 	Username    string
 	DisplayName string
@@ -35,7 +35,7 @@ type User struct {
 	IsDeleted   sql.NullBool
 }
 
-type UserChatRoom struct {
+type ChatsUserChatRoom struct {
 	UserID     sql.NullInt64
 	ChatRoomID sql.NullInt64
 }

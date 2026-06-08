@@ -11,7 +11,7 @@ import (
 )
 
 const addUserToChatRoom = `-- name: AddUserToChatRoom :exec
-INSERT INTO user_chat_room (
+INSERT INTO chats.user_chat_room (
     user_id, chat_room_id
 ) VALUES ($1, $2)
 `
@@ -27,7 +27,7 @@ func (q *Queries) AddUserToChatRoom(ctx context.Context, arg AddUserToChatRoomPa
 }
 
 const createChatRoom = `-- name: CreateChatRoom :one
-INSERT INTO chat_rooms (
+INSERT INTO chats.chat_rooms (
     name, description
 ) VALUES ($1, $2)
 RETURNING id, name, description, created, is_deleted
@@ -38,9 +38,9 @@ type CreateChatRoomParams struct {
 	Description sql.NullString
 }
 
-func (q *Queries) CreateChatRoom(ctx context.Context, arg CreateChatRoomParams) (ChatRoom, error) {
+func (q *Queries) CreateChatRoom(ctx context.Context, arg CreateChatRoomParams) (ChatsChatRoom, error) {
 	row := q.db.QueryRowContext(ctx, createChatRoom, arg.Name, arg.Description)
-	var i ChatRoom
+	var i ChatsChatRoom
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -52,7 +52,7 @@ func (q *Queries) CreateChatRoom(ctx context.Context, arg CreateChatRoomParams) 
 }
 
 const createMessage = `-- name: CreateMessage :one
-INSERT INTO chat_message (
+INSERT INTO chats.chat_message (
     user_id, chat_room_id, content, is_edited, is_deleted
 ) VALUES ($1, $2, $3, FALSE, FALSE)
 RETURNING id, user_id, chat_room_id, content, created, is_edited, is_deleted
@@ -64,9 +64,9 @@ type CreateMessageParams struct {
 	Content    string
 }
 
-func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (ChatMessage, error) {
+func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (ChatsChatMessage, error) {
 	row := q.db.QueryRowContext(ctx, createMessage, arg.UserID, arg.ChatRoomID, arg.Content)
-	var i ChatMessage
+	var i ChatsChatMessage
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -80,7 +80,7 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (C
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (
+INSERT INTO chats.users (
     username, display_name
 ) VALUES ($1, $2)
 RETURNING id, username, display_name, created, is_deleted
@@ -91,9 +91,9 @@ type CreateUserParams struct {
 	DisplayName string
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (ChatsUser, error) {
 	row := q.db.QueryRowContext(ctx, createUser, arg.Username, arg.DisplayName)
-	var i User
+	var i ChatsUser
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
@@ -105,7 +105,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const deleteMessage = `-- name: DeleteMessage :exec
-DELETE FROM chat_message
+DELETE FROM chats.chat_message
 WHERE id = $1
 `
 
@@ -115,7 +115,7 @@ func (q *Queries) DeleteMessage(ctx context.Context, id int64) error {
 }
 
 const editMessage = `-- name: EditMessage :exec
-UPDATE chat_message
+UPDATE chats.chat_message
 SET content = $2
 WHERE id = $1
 `
@@ -131,13 +131,13 @@ func (q *Queries) EditMessage(ctx context.Context, arg EditMessageParams) error 
 }
 
 const getChatRoom = `-- name: GetChatRoom :one
-SELECT id, name, description, created, is_deleted FROM chat_rooms
+SELECT id, name, description, created, is_deleted FROM chats.chat_rooms
 WHERE id = $1
 `
 
-func (q *Queries) GetChatRoom(ctx context.Context, id int64) (ChatRoom, error) {
+func (q *Queries) GetChatRoom(ctx context.Context, id int64) (ChatsChatRoom, error) {
 	row := q.db.QueryRowContext(ctx, getChatRoom, id)
-	var i ChatRoom
+	var i ChatsChatRoom
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -149,7 +149,7 @@ func (q *Queries) GetChatRoom(ctx context.Context, id int64) (ChatRoom, error) {
 }
 
 const getChatRooms = `-- name: GetChatRooms :many
-SELECT id, name, description, created, is_deleted FROM chat_rooms
+SELECT id, name, description, created, is_deleted FROM chats.chat_rooms
 LIMIT $1
 OFFSET $2
 `
@@ -159,15 +159,15 @@ type GetChatRoomsParams struct {
 	Offset int32
 }
 
-func (q *Queries) GetChatRooms(ctx context.Context, arg GetChatRoomsParams) ([]ChatRoom, error) {
+func (q *Queries) GetChatRooms(ctx context.Context, arg GetChatRoomsParams) ([]ChatsChatRoom, error) {
 	rows, err := q.db.QueryContext(ctx, getChatRooms, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ChatRoom
+	var items []ChatsChatRoom
 	for rows.Next() {
-		var i ChatRoom
+		var i ChatsChatRoom
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -189,13 +189,13 @@ func (q *Queries) GetChatRooms(ctx context.Context, arg GetChatRoomsParams) ([]C
 }
 
 const getMessage = `-- name: GetMessage :one
-SELECT id, user_id, chat_room_id, content, created, is_edited, is_deleted FROM chat_message
+SELECT id, user_id, chat_room_id, content, created, is_edited, is_deleted FROM chats.chat_message
 WHERE id = $1
 `
 
-func (q *Queries) GetMessage(ctx context.Context, id int64) (ChatMessage, error) {
+func (q *Queries) GetMessage(ctx context.Context, id int64) (ChatsChatMessage, error) {
 	row := q.db.QueryRowContext(ctx, getMessage, id)
-	var i ChatMessage
+	var i ChatsChatMessage
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -209,7 +209,7 @@ func (q *Queries) GetMessage(ctx context.Context, id int64) (ChatMessage, error)
 }
 
 const getMessagesForChatRoom = `-- name: GetMessagesForChatRoom :many
-SELECT id, user_id, chat_room_id, content, created, is_edited, is_deleted FROM chat_message
+SELECT id, user_id, chat_room_id, content, created, is_edited, is_deleted FROM chats.chat_message
 WHERE chat_room_id = $1
 LIMIT $2
 OFFSET $3
@@ -221,15 +221,15 @@ type GetMessagesForChatRoomParams struct {
 	Offset     int32
 }
 
-func (q *Queries) GetMessagesForChatRoom(ctx context.Context, arg GetMessagesForChatRoomParams) ([]ChatMessage, error) {
+func (q *Queries) GetMessagesForChatRoom(ctx context.Context, arg GetMessagesForChatRoomParams) ([]ChatsChatMessage, error) {
 	rows, err := q.db.QueryContext(ctx, getMessagesForChatRoom, arg.ChatRoomID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ChatMessage
+	var items []ChatsChatMessage
 	for rows.Next() {
-		var i ChatMessage
+		var i ChatsChatMessage
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -253,13 +253,13 @@ func (q *Queries) GetMessagesForChatRoom(ctx context.Context, arg GetMessagesFor
 }
 
 const getUserById = `-- name: GetUserById :one
-SELECT id, username, display_name, created, is_deleted FROM users
+SELECT id, username, display_name, created, is_deleted FROM chats.users
 WHERE id = $1
 `
 
-func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
+func (q *Queries) GetUserById(ctx context.Context, id int64) (ChatsUser, error) {
 	row := q.db.QueryRowContext(ctx, getUserById, id)
-	var i User
+	var i ChatsUser
 	err := row.Scan(
 		&i.ID,
 		&i.Username,

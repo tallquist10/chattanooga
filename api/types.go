@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
 
@@ -23,6 +24,13 @@ type CreateUserRequest struct {
 	User       *User
 	ResultChan chan int64
 	ErrorChan  chan error
+}
+
+type CreateChatRoomRequest struct {
+	Name        string
+	Description string
+	ResultChan  chan *ChatRoom
+	ErrorChan   chan error
 }
 
 type User struct {
@@ -48,9 +56,9 @@ type ClientMessage struct {
 }
 
 type ChatRoomMessage struct {
-	UserId    int64
-	ChannelId int64
-	Content   string
+	UserId    int64  `json:"userId"`
+	ChannelId int64  `json:"channelId"`
+	Content   string `json:"content"`
 	// eventual attachments?
 }
 
@@ -62,4 +70,9 @@ type BroadcastMessage struct {
 type RegisterClientRequest struct {
 	Connection *websocket.Conn
 	UserIdChan chan int64
+}
+
+type DBHandler[T any] struct {
+	Request *T
+	Context *gin.Context
 }
