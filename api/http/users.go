@@ -2,13 +2,13 @@ package http
 
 import (
 	"database/sql"
-	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tallquist10/chat-server/api"
-	"github.com/tallquist10/chat-server/db"
+	db "github.com/tallquist10/chat-server/db/sqlc/sqlite"
 )
 
 type UsersApi struct {
@@ -31,7 +31,7 @@ func (u *UsersApi) Start() error {
 	for {
 		select {
 		case createUserReq := <-u.createUserChan:
-			fmt.Println("Received create user request")
+			slog.Debug("Received create user request")
 			go u.createUser(createUserReq)
 		case _ = <-u.closeChan:
 			return nil
@@ -45,7 +45,7 @@ func (u *UsersApi) CreateUser(c *gin.Context) {
 	user, err := api.FormatJsonInput[api.User](c)
 
 	if err != nil {
-		fmt.Println("Failed to decode CreateUserRequest", err.Error())
+		slog.Error("Failed to decode CreateUserRequest", "error", err.Error())
 		api.WriteResponse(c, http.StatusBadRequest, &err)
 		return
 	}

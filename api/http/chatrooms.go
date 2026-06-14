@@ -2,13 +2,13 @@ package http
 
 import (
 	"database/sql"
-	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tallquist10/chat-server/api"
-	"github.com/tallquist10/chat-server/db"
+	db "github.com/tallquist10/chat-server/db/sqlc/sqlite"
 )
 
 type ChatRoomsApi struct {
@@ -31,7 +31,7 @@ func (cr *ChatRoomsApi) Start() {
 	for {
 		select {
 		case req := <-cr.createChatRoomChan:
-			fmt.Printf("Creating chat room: %s\n", req.Request.Name)
+			slog.Debug("Creating chat room", "name", req.Request.Name)
 			cr.createChatRoom(req)
 		case _ = <-cr.closeChan:
 			return
@@ -48,7 +48,7 @@ func (cr *ChatRoomsApi) CreateChatRoom(c *gin.Context) {
 	}](c)
 
 	if err != nil {
-		fmt.Println("Failed to decode CreateChatRoomRequest", err.Error())
+		slog.Error("Failed to decode CreateChatRoomRequest", "error", err.Error())
 		api.WriteResponse(c, http.StatusBadRequest, &err)
 		return
 	}

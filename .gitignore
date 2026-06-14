@@ -1,1 +1,7 @@
 server
+!cmd/server
+chat-server
+chat-server-load-test*
+chats.db
+log*.txt
+.venv

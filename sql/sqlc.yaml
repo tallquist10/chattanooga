@@ -1,10 +1,18 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    queries: "queries.sql"
-    schema: "./migrations"
+    queries: "postgres/queries.sql"
+    schema: "postgres/migrations"
     gen:
       go:
-        package: "db"
-        out: "../db"
+        package: "pg"
+        out: "../db/sqlc/postgres"
+        sql_package: "database/sql"
+  - engine: "sqlite"
+    queries: "sqlite/queries.sql"
+    schema: "sqlite/migrations"
+    gen:
+      go:
+        package: "sqlite"
+        out: "../db/sqlc/sqlite"
         sql_package: "database/sql"
