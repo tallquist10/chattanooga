@@ -5,22 +5,42 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "ChatServer",
+            "name": "ChatServer Postgres",
             "type": "go",
             "request": "launch",
             "mode": "auto",
             "program": "cmd/server/main.go",
             "env": {
+                "ADDR": ":8080",
                 "PGHOST": "localhost",
                 "PGPASSWORD": "password",
-                "MIGRATIONS_FILE_PATH": "${workspaceFolder}/sql/migrations" //open just the chatserver project
-            }
+                "MIGRATIONS_FILE_PATH": "${workspaceFolder}/sql/postgres/migrations", //open just the chatserver project
+                "SQL_MODE": "POSTGRES"
+            },
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "ChatServer Sqlite",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "cmd/server/main.go",
+            "env": {
+                "ADDR": ":8080",
+                "MIGRATIONS_FILE_PATH": "${workspaceFolder}/sql/sqlite/migrations", //open just the chatserver project
+                "SQL_MODE": "SQLITE",
+                "SQLITE_FILE": "chats.db"
+            },
+            "console": "integratedTerminal"
         },
         {
             "name": "Test ChatServer",
             "request": "launch",
-            "type": "bashdb",
-            "program": "test.sh"
-        }
+            "type": "debugpy",
+            "program": "${workspaceFolder}/load-test/load_test.py",
+            "python": "${workspaceFolder}/load-test/.venv/bin/python3",
+            "console": "integratedTerminal"
+        },
+
     ]
 }

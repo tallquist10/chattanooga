@@ -1,24 +1,9 @@
 package api
 
 import (
-	"encoding/json"
-
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
+	ws "github.com/gorilla/websocket"
 )
-
-type WebSocketMessageType string
-
-const (
-	RegisterUser        WebSocketMessageType = "register_user"
-	ChatMessage         WebSocketMessageType = "chat_message"
-	SubscribeToChatRoom WebSocketMessageType = "subscribe_to_chat_room"
-)
-
-type WebSocketMessage struct {
-	Type    WebSocketMessageType `json:"type"`
-	Payload json.RawMessage      `json:"payload"`
-}
 
 type CreateUserRequest struct {
 	User       *User
@@ -52,7 +37,7 @@ type Message struct {
 
 type ClientMessage struct {
 	UserId     int64
-	Connection *websocket.Conn
+	Connection *ws.Conn
 }
 
 type ChatRoomMessage struct {
@@ -68,11 +53,30 @@ type BroadcastMessage struct {
 }
 
 type RegisterClientRequest struct {
-	Connection *websocket.Conn
+	Connection *ws.Conn
 	UserIdChan chan int64
+}
+
+type CloseClientRequest struct {
+	UserId      int64
+	successChan bool
 }
 
 type DBHandler[T any] struct {
 	Request *T
 	Context *gin.Context
+}
+
+type ChatServer interface {
+	RegisterUser(msg *User)
+	RegisterClient(msg *ClientMessage)
+	ReceiveMessage(msg *ChatRoomMessage)
+	BroadcastMessage(msg *Message, chatRoom *ChatRoom)
+}
+
+type ChatServerConfig struct {
+	ConcurrentProcessors int
+	RateLimitPerUser     int
+	BufferSize           int
+	PingIntervalMs       int
 }
