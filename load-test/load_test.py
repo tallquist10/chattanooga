@@ -22,7 +22,7 @@ messages = [
     "They finally reached the top of the mountain after several hours. ",
 ]
 
-CLIENTS = 100
+CLIENTS = 1000
 ROUNDS = 1000
 
 def on_message(wsapp, message):

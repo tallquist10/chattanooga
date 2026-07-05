@@ -2,7 +2,6 @@ package websockets
 
 import (
 	"encoding/json"
-	"time"
 
 	ws "github.com/gorilla/websocket"
 	"github.com/tallquist10/chat-server/api"
@@ -22,10 +21,8 @@ type WebSocketChatServer struct {
 	clientUsers        map[int64]*api.User
 	incomingChan       chan *api.DBHandler[api.ChatRoomMessage]
 	broadcastChan      chan *api.BroadcastMessage
-	pingsChan          chan int64
 	dbConnection       *db.Queries
 	config             *api.ChatServerConfig
-	pingInterval       *time.Ticker
 }
 
 type WebSocketMessageType string
@@ -39,15 +36,4 @@ const (
 type WebSocketMessage struct {
 	Type    WebSocketMessageType `json:"type"`
 	Payload json.RawMessage      `json:"payload"`
-}
-
-type WebSocketClientMessageQueue struct {
-	conn         *ws.Conn
-	msgChan      chan *WebSocketClientMessage
-	clientClosed bool
-}
-
-type WebSocketClientMessage struct {
-	messageType    int
-	messageContent []byte
 }

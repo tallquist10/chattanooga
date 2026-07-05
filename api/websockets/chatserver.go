@@ -20,22 +20,20 @@ func NewChatServer(
 	config *api.ChatServerConfig,
 	conn *sql.DB,
 ) *WebSocketChatServer {
-	ticker := time.NewTicker(time.Duration(config.PingIntervalMs) * time.Millisecond)
 	return &WebSocketChatServer{
 		registerClientChan: make(chan *api.RegisterClientRequest, config.BufferSize),
 		closeClientChan:    make(chan *api.CloseClientRequest, config.BufferSize),
 		clientConnections:  make(map[int64]*WebSocketClientMessageQueue),
 		incomingChan:       make(chan *api.DBHandler[api.ChatRoomMessage], 5*config.BufferSize),
 		broadcastChan:      make(chan *api.BroadcastMessage, config.BufferSize),
-		pingsChan:          make(chan int64, config.BufferSize),
 		closeChan:          make(chan bool),
 		dbConnection:       db.New(conn),
-		pingInterval:       ticker,
 		upgrader: &ws.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				return true
 			},
 		},
+		config: config,
 	}
 }
 
@@ -45,19 +43,8 @@ func (cs *WebSocketChatServer) Start() error {
 	defer close(cs.incomingChan)
 	defer close(cs.broadcastChan)
 	defer close(cs.closeChan)
-	defer close(cs.pingsChan)
 
 	var clientId int64 = 1
-	// go cs.handleBroadcastMessage(cs.broadcastChan)
-	// go cs.handleRegisterClient(cs.registerClientChan)
-	// go cs.handleCloseClient(cs.closeClientChan)
-	// go cs.handleReceiveMessage(cs.incomingChan)
-
-	// synchronize map iterations/writes
-	// broadcast
-	// register
-	// close
-	// ping
 
 	for {
 		select {
@@ -72,10 +59,6 @@ func (cs *WebSocketChatServer) Start() error {
 			cs.handleCloseClient(msg)
 		case msg := <-cs.incomingChan:
 			cs.handleReceiveMessage(msg)
-		case _ = <-cs.pingInterval.C:
-			cs.sendPings()
-		case clientId := <-cs.pingsChan:
-			go cs.handlePing(clientId)
 		default:
 			time.Sleep(5 * time.Millisecond)
 		}
@@ -118,7 +101,6 @@ func (cs *WebSocketChatServer) HandleConnection(c *gin.Context) {
 		}
 
 		if closed {
-			slog.Info("Connection closed", "clientId", clientId)
 			break
 		}
 	}
@@ -133,8 +115,6 @@ func (cs *WebSocketChatServer) ReceiveMessage(c *gin.Context, msg *api.ChatRoomM
 
 // func (cs *WebSocketChatServer) handleReceiveMessage(incomingChan chan *api.DBHandler[api.ChatRoomMessage]) {
 func (cs *WebSocketChatServer) handleReceiveMessage(req *api.DBHandler[api.ChatRoomMessage]) {
-	// for req := range incomingChan {
-	// persist the nessage to the messages table
 	dbMsg, err := cs.dbConnection.CreateMessage(req.Context, db.CreateMessageParams{
 		UserID:     req.Request.UserId,
 		ChatRoomID: req.Request.ChannelId,
@@ -159,44 +139,28 @@ func (cs *WebSocketChatServer) handleReceiveMessage(req *api.DBHandler[api.ChatR
 	}
 
 	cs.BroadcastMessage(outgoingMsg)
-	// }
 }
 
-// func (cs *WebSocketChatServer) handleBroadcastMessage(broadcastChan chan *api.BroadcastMessage) {
 func (cs *WebSocketChatServer) handleBroadcastMessage(msg *api.BroadcastMessage) {
-	// for msg := range broadcastChan {
 	slog.Debug("Broadcast message", msg.Message.Sender.Username, msg.Message.Content)
+	// database call for channel participants, loop through those instead
 	go func() {
 		for clientId, msgQueue := range cs.clientConnections {
-			if msg.Message.Sender.Id == clientId || msgQueue.clientClosed {
+			if msg.Message.Sender.Id == clientId {
 				return
 			}
-			msgQueue.msgChan <- &WebSocketClientMessage{
+			clientMsg := &WebSocketClientMessage{
 				messageType:    websocket.TextMessage,
 				messageContent: []byte(msg.Message.Content),
 			}
+			err := msgQueue.ReceiveMessage(clientMsg)
+			if err != nil {
+				slog.Error(err.Error(), "clientId", clientId)
+				continue
+			}
+			slog.Info("Send message to client", "clientId", clientId, "sender", msg.Message.Sender.Id, "content", msg.Message.Content)
 		}
 	}()
-	// }
-}
-
-func (cs *WebSocketChatServer) sendMessages(clientId int64, msgQueue *WebSocketClientMessageQueue) {
-	slog.Debug("Forwarding messages for client", "clientId", clientId)
-	for msg := range msgQueue.msgChan {
-		if msgQueue.clientClosed {
-			slog.Debug("Received message for closed client, skipping")
-			continue
-		}
-		var err error
-		if msg.messageType == websocket.TextMessage {
-			err = msgQueue.conn.WriteMessage(msg.messageType, msg.messageContent)
-		} else {
-			err = msgQueue.conn.WriteControl(msg.messageType, msg.messageContent, time.Now().Add(10*time.Second))
-		}
-		if err != nil {
-			slog.Debug("Error writing message to client", "clientId", clientId, "error", err)
-		}
-	}
 }
 
 func (cs *WebSocketChatServer) BroadcastMessage(msg *api.BroadcastMessage) {
@@ -207,35 +171,32 @@ func (cs *WebSocketChatServer) RegisterClient(msg *api.RegisterClientRequest) {
 	cs.registerClientChan <- msg
 }
 
-// func (cs *WebSocketChatServer) handleRegisterClient(registerClientChan chan *api.RegisterClientRequest) {
 func (cs *WebSocketChatServer) handleRegisterClient(msg *api.RegisterClientRequest, clientId int64) {
-	// for msg := range registerClientChan {
 	slog.Debug("Register client message", "clientId", clientId, "conn", msg.Connection)
-	msgQueue := &WebSocketClientMessageQueue{
-		conn:         msg.Connection,
-		msgChan:      make(chan *WebSocketClientMessage),
-		clientClosed: false,
-	}
+	msg.Connection.SetPingHandler(func(appData string) error {
+		slog.Debug("Received ping from client", "clientId", clientId)
+		return msg.Connection.WriteControl(ws.PongMessage, []byte(appData), time.Now().Add(10*time.Second))
+	})
+	msg.Connection.SetPongHandler(func(appData string) error {
+		slog.Info("Received pong from client", "clientId", clientId)
+		return nil
+	})
+	msgQueue := NewMessageQueue(clientId, msg.Connection, MessageQueueBufferSize(25), PingInterval(cs.config.PingIntervalMs))
 	cs.clientConnections[clientId] = msgQueue
-	go cs.sendMessages(clientId, msgQueue)
+	go msgQueue.SendMessages()
 	msg.UserIdChan <- clientId
 	close(msg.UserIdChan)
-	// }
 }
 
-// func (cs *WebSocketChatServer) handleCloseClient(closeClientChan chan *api.CloseClientRequest) {
 func (cs *WebSocketChatServer) handleCloseClient(msg *api.CloseClientRequest) {
-	// for msg := range closeClientChan {
 	clientMessageQueue, ok := cs.clientConnections[msg.UserId]
 	if !ok {
 		slog.Warn("Received close connection request for unknown client id", "clientId", msg.UserId)
-		// continue
 		return
 	}
-	close(clientMessageQueue.msgChan)
-	clientMessageQueue.clientClosed = true
+
+	clientMessageQueue.Close()
 	delete(cs.clientConnections, msg.UserId)
-	// }
 }
 
 func (cs *WebSocketChatServer) HandleWebSocketMessage(c *gin.Context, clientId int64, msgType int, content []byte) (bool, error) {
@@ -249,12 +210,6 @@ func (cs *WebSocketChatServer) HandleWebSocketMessage(c *gin.Context, clientId i
 		return false, cs.handleChatMessage(c, &msg)
 	case websocket.BinaryMessage:
 		return false, fmt.Errorf("Server is not configured to receive binary messages") // error
-	case websocket.PingMessage:
-		cs.pingsChan <- clientId
-		return false, nil
-	case websocket.PongMessage:
-		slog.Info("Received pong message from client", "clientId", clientId)
-		return false, nil
 	case websocket.CloseMessageTooBig, websocket.CloseMessage, WebSocketClose:
 		var messageType string
 		switch msgType {
@@ -294,31 +249,6 @@ func (cs *WebSocketChatServer) handleChatMessage(c *gin.Context, msg *WebSocketM
 func (cs *WebSocketChatServer) handleCloseClientMessage(clientId int64) {
 	cs.closeClientChan <- &api.CloseClientRequest{
 		UserId: clientId,
-	}
-}
-
-func (cs *WebSocketChatServer) handlePing(clientId int64) error {
-	mq, ok := cs.clientConnections[clientId]
-	if !ok {
-		return fmt.Errorf("Received ping from unregistered client %d\n", clientId)
-	}
-
-	mq.msgChan <- &WebSocketClientMessage{
-		messageType:    websocket.PongMessage,
-		messageContent: []byte("don't worry, I'm still here!"),
-	}
-	return nil
-}
-
-func (cs *WebSocketChatServer) sendPings() {
-	for clientId, mq := range cs.clientConnections {
-		go func() {
-			slog.Debug("Sending ping", "clientId", clientId)
-			mq.msgChan <- &WebSocketClientMessage{
-				messageType:    websocket.PingMessage,
-				messageContent: []byte("are you still there?"),
-			}
-		}()
 	}
 }
 
